@@ -10,19 +10,21 @@ import com.adib.mobile.datamodel.Purpose
 import com.adib.mobile.datamodel.SavingsAccount
 import com.adib.mobile.datamodel.Transfer
 import com.adib.mobile.model.RoutingNostro
+import com.adib.mobile.model.TransferRate
+import com.adib.mobile.model.internalacctransfer.TransferRateRequest
 import com.adib.mobile.networkmodule.util.NetworkState
 import com.adib.mobile.ui2.Resource
-import com.adib.mobile.ui2.home.payments.inttxfr.interactor.CountryInteractor
-import com.adib.mobile.ui2.home.payments.inttxfr.interactor.ManageBeneficiaryInteractor
+import com.adib.mobile.ui2.home.payments.inttxfr.Util
 import com.adib.mobile.ui2.home.payments.inttxfr.interactor.OwnAccountsInteractor
 import com.adib.mobile.ui2.home.payments.inttxfr.interactor.TransferRateAndPurposeInteractor
-import com.adib.mobile.ui2.home.payments.inttxfr.repository.BankDetailsRepository
-import com.adib.mobile.ui2.home.payments.inttxfr.repository.CountryRepository
 import com.adib.mobile.ui2.home.payments.inttxfr.repository.WalletRepository
 import com.adib.mobile.ui2.home.payments.inttxfr.repository.entertransferamount.AmountEnteringRepository
+import com.adib.mobile.ui2.home.payments.inttxfr.utils.TransferOfflineApiPath
 import com.adib.mobile.ui2.home.transfer.wallets.WalletInteractor
 import com.adib.mobile.usecase.accounts.BaseFactory
 import com.adib.mobile.usecase.transfer.LoadPayerAccountsResult
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -65,6 +67,7 @@ class BeneficiaryAmountEnteringViewModelTest : BaseNewClientMockDependencies() {
 
     @Mock
     lateinit var walletRepo: WalletRepository
+
     @Mock
     lateinit var amountRepos: AmountEnteringRepository
 
@@ -72,6 +75,7 @@ class BeneficiaryAmountEnteringViewModelTest : BaseNewClientMockDependencies() {
 
     override fun setup() {
         Dispatchers.setMain(testCoroutineDispatcher)
+        filePathList = listOf(TransferOfflineApiPath.TRANSFER_RATE)
         super.setup()
         walletInteractor = WalletInteractor(walletRepo)
         transferInteractor = TransferRateAndPurposeInteractor(amountRepos)
@@ -84,16 +88,99 @@ class BeneficiaryAmountEnteringViewModelTest : BaseNewClientMockDependencies() {
     }
 
     @Test
-    fun `test FetchOwnAccountsAndCards event`() = runTest {
+    fun `test FetchOwnAccountsAndCards event Success response`() = runTest {
         PowerMockito.`when`(
             ownInteractor.fetchOwnAccountsAndCards(
                 AdibApp.getAppContext(),
-                bundleDataModel.transfer ?: Transfer()
+                getNotNullTransfer()
             )
         ).thenReturn(flowOf(Resource.Success(getLoadPayAccounts(), NetworkState.SUCCESS)))
         viewModel.onEvent(BeneficiaryAmountEnteringScreenEvent.FetchOwnAccountsAndCards)
         val state = viewModel.state.first() as BeneficiaryAmountEnteringUIState.OwnAccountFetched
         Assert.assertNotNull(state.accountCardsUIData)
+    }
+
+    @Test
+    fun `test FetchOwnAccountsAndCards event with failure response`() = runTest {
+        val transfer = getNotNullTransfer()
+        PowerMockito.`when`(
+            ownInteractor.fetchOwnAccountsAndCards(
+                AdibApp.getAppContext(),
+                transfer
+            )
+        ).thenReturn(flowOf(Resource.Network(NetworkState.FAILED)))
+        viewModel.onEvent(BeneficiaryAmountEnteringScreenEvent.FetchOwnAccountsAndCards)
+        val response = ownInteractor.fetchOwnAccountsAndCards(
+            AdibApp.getAppContext(),
+            transfer
+        ).first()
+        Assert.assertNotNull(response)
+        Assert.assertTrue(response.networkState == NetworkState.FAILED)
+        Assert.assertNull(viewModel.onNetworkCallFailed.value)
+    }
+
+    @Test
+    fun `test FetchTransferRate event with success response when transfer doesn't have own account`() = runTest {
+        val transfer = getNotNullTransfer()
+        PowerMockito.`when`(amountRepos.fetchTransferRate(TransferRateRequest()))
+            .thenReturn(flowOf(Resource.Network(NetworkState.FAILED)))
+
+        viewModel.onEvent(BeneficiaryAmountEnteringScreenEvent.FetchTransferRate)
+        val response = transferInteractor.fetchTransferRate(
+            transfer
+        ).first()
+        Assert.assertNotNull(response)
+        Assert.assertTrue(response.apiNetworkState() == NetworkState.SUCCESS)
+        Assert.assertNotNull(response.getResponse())
+    }
+
+    @Test
+    fun `test FetchTransferRate event with success response when transfer has own account with number is empty`() = runTest {
+        val transfer = getNotNullTransfer()
+        transfer.ownAccount = SavingsAccount()
+        PowerMockito.`when`(amountRepos.fetchTransferRate(TransferRateRequest()))
+            .thenReturn(flowOf(Resource.Network(NetworkState.FAILED)))
+
+        viewModel.onEvent(BeneficiaryAmountEnteringScreenEvent.FetchTransferRate)
+        val response = transferInteractor.fetchTransferRate(
+            transfer
+        ).first()
+        Assert.assertNotNull(response)
+        Assert.assertTrue(response.apiNetworkState() == NetworkState.SUCCESS)
+        Assert.assertNotNull(response.getResponse())
+    }
+
+    @Test
+    fun `test FetchTransferRate event with Failure response when transfer has valid own account`() = runTest {
+        val transfer = getNotNullTransfer()
+        transfer.ownAccount = SavingsAccount().apply {
+            number = "020301546015"
+        }
+        PowerMockito.`when`(amountRepos.fetchTransferRate(TransferRateRequest()))
+            .thenReturn(flowOf(Resource.Network(NetworkState.FAILED,data = null)))
+
+        viewModel.onEvent(BeneficiaryAmountEnteringScreenEvent.FetchTransferRate)
+        val response = transferInteractor.fetchTransferRate(
+            transfer
+        ).first()
+        Assert.assertNotNull(response)
+        Assert.assertTrue(response.apiNetworkState() == NetworkState.FAILED)
+        Assert.assertNull(viewModel.onNetworkCallFailed.value)
+      /*  val response = transferInteractor.fetchTransferRate(
+            transfer
+        ).first()
+        Assert.assertNotNull(response)
+        Assert.assertTrue(response.apiNetworkState() == NetworkState.FAILED)*/
+    }
+
+    @Test
+    fun `test FetchTransferRate event when user has single account`() {
+      //  interactor.fetchTransferRate(it)
+    }
+
+    @Test
+    fun `test FetchTransferRate event when user has multiple accounts and is repeat transfer`() {
+
     }
 
     private fun saveTransferData() = runTest {
@@ -134,6 +221,13 @@ class BeneficiaryAmountEnteringViewModelTest : BaseNewClientMockDependencies() {
     }
 
     private fun getLoadPayAccounts() = LoadPayerAccountsResult().apply {
-        ownAccounts = listOf(SavingsAccount(), SavingsAccount(), SavingsAccount())
+        ownAccounts = listOf(SavingsAccount())
     }
+
+    private fun getNotNullTransfer() = bundleDataModel.transfer ?: Transfer()
+
+    private fun getTransferRate() = Gson().fromJson<TransferRate>(
+        Util.getDataFromJson(adibApp.assets, TransferOfflineApiPath.TRANSFER_RATE),
+        object : TypeToken<TransferRate>() {}.type
+    )
 }
