@@ -1,12 +1,14 @@
 package com.example.sampleapp
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,31 +16,31 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.sampleapp.ui.theme.Pink40
+import androidx.compose.ui.util.lerp
 import com.example.sampleapp.ui.theme.SampleAppTheme
+import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,10 +48,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             SampleAppTheme {
-                ArtistCardView()
-                /* Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                     CustomNavHost(modifier = Modifier.padding(innerPadding))
-                 }*/
+                HorizontalPagerExample()
             }
         }
     }
@@ -57,84 +56,94 @@ class MainActivity : ComponentActivity() {
 
 
 @Composable
-fun Artist() {
-    Row(
-        modifier = Modifier
-            .background(color = Pink40)
-            .fillMaxWidth()
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Image(
-            imageVector = Icons.Filled.AccountCircle,
-            contentDescription = "Artist image",
-            modifier = Modifier.requiredSize(48.dp)
-        )
-        Column(modifier = Modifier.padding(start = 8.dp)) {
-            Text("Alfred Sisley", color = Color.White, style = MaterialTheme.typography.titleMedium)
-            Text("3 minutes ago", color = Color.White)
+fun HorizontalPagerExample() {
+    val images = listOf(
+        R.drawable.ic_bg0,
+        R.drawable.ic_bg1,
+        R.drawable.ic_bg2,
+        R.drawable.ic_bg3,
+        R.drawable.ic_bg0,
+        R.drawable.ic_bg1,
+        R.drawable.ic_bg2,
+        R.drawable.ic_bg3,
+        R.drawable.ic_bg0,
+        R.drawable.ic_bg1
+    )
+    val pagerState = rememberPagerState(pageCount = {
+        10
+    })
+
+    LaunchedEffect(pagerState) {
+        // Collect from the a snapshotFlow reading the currentPage
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            // Do something with each page change, for example:
+            // viewModel.sendPageSelectedEvent(page)
+            Log.d("Page change", "Page changed to $page")
         }
     }
-}
 
-@Composable
-fun ArtistCardView() {
-    val padding = 16.dp
+    val coroutineScope = rememberCoroutineScope()
     Column(
-        Modifier
-            .padding(padding)
-            .fillMaxWidth()
-    )
-    {
-        Artist()
-        Spacer(modifier = Modifier.size(padding))
-        Card(elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)) {
-            Box(modifier = Modifier
-                .fillMaxSize()
-                .background(color = Color.Blue))
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxSize()
+    ) {
+        HorizontalPager(state = pagerState) { page ->
+            Image(
+                painterResource(id = images[page]),
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(30.dp)
+            )
+        }
+        Spacer(modifier = Modifier.size(32.dp))
+        Row() {
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowLeft,
+                contentDescription = null,
+                modifier = Modifier.clickable {
+                    coroutineScope.launch {
+                        val page = pagerState.currentPage
+                        if (page > 0) {
+                            pagerState.animateScrollToPage(page - 1)
+                        }
+                    }
+                })
+            Spacer(modifier = Modifier.size(50.dp))
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                modifier = Modifier.clickable {
+                    coroutineScope.launch {
+                        val page = pagerState.currentPage
+                        if (page < 9) {
+                            pagerState.animateScrollToPage(page + 1)
+                        }
+                    }
+                })
+        }
+
+        Row(
+            Modifier
+                .wrapContentHeight()
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            repeat(pagerState.pageCount) { iteration ->
+                val color =
+                    if (pagerState.currentPage == iteration) Color.DarkGray else Color.LightGray
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .size(16.dp)
+                )
+            }
         }
     }
 }
 
-@Composable
-fun ArtistCardView1() {
-    Box {
-        Spacer(
-            Modifier
-                .matchParentSize()
-                .background(Color.Red)
-        )
 
-        Artist()
-    }
-}
-
-
-@Preview
-@Composable
-fun Preview() {
-    ImageViewEx()
-}
-
-@Composable
-fun ImageViewEx() {
-    Image(
-        painterResource(R.drawable.ic_launcher_background),
-        contentDescription = null,
-          Modifier.fillMaxSize().wrapContentSize().clip(CircleShape).padding(16.dp).size(100.dp).fade(true)
-
-      //  Modifier.sizeIn(minWidth = 100.dp, minHeight = 100.dp)
-    )
-}
-
-fun Modifier.clip(shape: Shape) = graphicsLayer(shape = shape, clip = true)
-
-fun Modifier.myBackground(color: Color) =
-    clip(RoundedCornerShape(8.dp))
-    .background(color)
-
-@Composable
-fun Modifier.fade(enable: Boolean): Modifier {
-    val alpha by animateFloatAsState(if (enable) 0.5f else 1.0f, label = "")
-    return this then Modifier.graphicsLayer { this.alpha = alpha }
-}
